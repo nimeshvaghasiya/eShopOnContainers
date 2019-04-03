@@ -1,41 +1,42 @@
-﻿using System;
+﻿using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using StackExchange.Redis;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using StackExchange.Redis;
-using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
-using Microsoft.Extensions.Logging;
-using System.Net;
 
 namespace Microsoft.eShopOnContainers.Services.Basket.API.Model
 {
     public class RedisBasketRepository : IBasketRepository
     {
-        private ILogger<RedisBasketRepository> _logger;
-        private BasketSettings _settings;
+        private readonly ILogger<RedisBasketRepository> _logger;
+        private readonly ConnectionMultiplexer _redis;
+        private readonly IDatabase _database;
 
-        private ConnectionMultiplexer _redis;
-
-
-        public RedisBasketRepository(IOptionsSnapshot<BasketSettings> options, ILoggerFactory loggerFactory)
+        public RedisBasketRepository(ILoggerFactory loggerFactory, ConnectionMultiplexer redis)
         {
-            _settings = options.Value;
             _logger = loggerFactory.CreateLogger<RedisBasketRepository>();
-
+            _redis = redis;
+            _database = redis.GetDatabase();
         }
 
-        public async Task<bool> DeleteBasket(string id)
+        public async Task<bool> DeleteBasketAsync(string id)
         {
-            var database = await GetDatabase();
-            return await database.KeyDeleteAsync(id.ToString());
+            return await _database.KeyDeleteAsync(id);
         }
 
-        public async Task<CustomerBasket> GetBasket(string customerId)
+        public IEnumerable<string> GetUsers()
         {
-            var database = await GetDatabase();
+            var server = GetServer();          
+            var data = server.Keys();
 
-            var data = await database.StringGetAsync(customerId.ToString());
+            return data?.Select(k => k.ToString());
+        }
+
+        public async Task<CustomerBasket> GetBasketAsync(string customerId)
+        {
+            var data = await _database.StringGetAsync(customerId);
+
             if (data.IsNullOrEmpty)
             {
                 return null;
@@ -44,33 +45,25 @@ namespace Microsoft.eShopOnContainers.Services.Basket.API.Model
             return JsonConvert.DeserializeObject<CustomerBasket>(data);
         }
 
-        public async Task<CustomerBasket> UpdateBasket(CustomerBasket basket)
+        public async Task<CustomerBasket> UpdateBasketAsync(CustomerBasket basket)
         {
-            var database = await GetDatabase();
+            var created = await _database.StringSetAsync(basket.BuyerId, JsonConvert.SerializeObject(basket));
 
-            var created = await database.StringSetAsync(basket.BuyerId, JsonConvert.SerializeObject(basket));
             if (!created)
             {
-                _logger.LogInformation("Problem persisting the item");
+                _logger.LogInformation("Problem occur persisting the item.");
                 return null;
             }
 
-            _logger.LogInformation("basket item persisted succesfully");
-            return await GetBasket(basket.BuyerId);
+            _logger.LogInformation("Basket item persisted succesfully.");
+
+            return await GetBasketAsync(basket.BuyerId);
         }
 
-        private async Task<IDatabase> GetDatabase()
+        private IServer GetServer()
         {
-            if (_redis == null)
-            {
-                //TODO: Need to make this more robust. Also want to understand why the static connection method cannot accept dns names.
-                var ips = await Dns.GetHostAddressesAsync(_settings.ConnectionString);
-                _logger.LogInformation($"Connecting to database {_settings.ConnectionString} at IP {ips.First().ToString()}");
-                _redis = await ConnectionMultiplexer.ConnectAsync(ips.First().ToString());
-            }
-
-            return _redis.GetDatabase();
+            var endpoint = _redis.GetEndPoints();
+            return _redis.GetServer(endpoint.First());
         }
     }
 }
-
