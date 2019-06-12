@@ -1,15 +1,14 @@
-﻿using System.Threading.Tasks;
-using eShopOnContainers.ViewModels.Base;
-using eShopOnContainers.Core.Models.Navigation;
-using Xamarin.Forms;
+﻿using eShopOnContainers.Core.Models.Navigation;
 using eShopOnContainers.Core.ViewModels.Base;
+using System.Threading.Tasks;
 using System.Windows.Input;
+using Xamarin.Forms;
 
 namespace eShopOnContainers.Core.ViewModels
 {
     public class MainViewModel : ViewModelBase
     {
-        public ICommand SettingsCommand => new Command(Settings);
+        public ICommand SettingsCommand => new Command(async () => await SettingsAsync());
 
         public override Task InitializeAsync(object navigationData)
         {
@@ -19,15 +18,15 @@ namespace eShopOnContainers.Core.ViewModels
             {
                 // Change selected application tab
                 var tabIndex = ((TabParameter)navigationData).TabIndex;
-                MessagingCenter.Send(this, MessengerKeys.ChangeTab, tabIndex);
+                MessagingCenter.Send(this, MessageKeys.ChangeTab, tabIndex);
             }
 
             return base.InitializeAsync(navigationData);
         }
 
-        private void Settings()
+        private async Task SettingsAsync()
         {
-            NavigationService.NavigateToAsync<SettingsViewModel>();
+            await NavigationService.NavigateToAsync<SettingsViewModel>();
         }
     }
 }
